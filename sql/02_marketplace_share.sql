@@ -26,19 +26,32 @@ WITH gift_collections AS (
 ),
 
 -- ==========================================================================
--- ADDRESS LOOKUP TABLE — Update with real verified contract addresses
--- Format: raw TON address (hex or base64 without workchain prefix)
+-- ADDRESS LOOKUP TABLE — Verified marketplace contract addresses (2026-05-13)
+-- Format: user-friendly TON address (EQ/EQC prefix)
+-- Dune ton.messages stores addresses in user-friendly format → can match directly
+--
+-- Verified sources:
+--   Getgems  : https://github.com/getgems-io/nft-contracts (official repo)
+--   Others   : See sql/_marketplace_addresses.md for full reference + TODOs
 -- ==========================================================================
 marketplace_map AS (
-  SELECT 'Fragment'    AS label, NULL AS contract_str WHERE 1=0
-  UNION ALL SELECT 'Getgems', NULL WHERE 1=0
-  UNION ALL SELECT 'Disintar', NULL WHERE 1=0
-  UNION ALL SELECT 'TONNEL',   NULL WHERE 1=0
-  UNION ALL SELECT 'Portals',  NULL WHERE 1=0
+  -- Getgems NFT Marketplace (official contract from getgems-io/nft-contracts)
+  -- marketplaceAddress: EQBYTuYbLf8INxFtD8tQeNk5ZLy-nAX9ahQbG_yl1qQ-GEMS
+  -- marketplaceFeeAddress (5% royalty): EQCjk1hh952vWaE9bRguFkAhDAL5jj3xj9p0uPWrFBq-GEMS
+  SELECT 'Getgems'    AS label, 'EQBYTuYbLf8INxFtD8tQeNk5ZLy-nAX9ahQbG_yl1qQ-GEMS' AS contract_str WHERE 1=1
+  UNION ALL SELECT 'Getgems', 'EQCjk1hh952vWaE9bRguFkAhDAL5jj3xj9p0uPWrFBq-GEMS' WHERE 1=1
+  -- Fragment (Telegram): TODO — verify via https://fragment.com or TON Explorer
+  UNION ALL SELECT 'Fragment',   NULL WHERE 1=0
+  -- Disintar: TODO — verify via https://disintar.io
+  UNION ALL SELECT 'Disintar',   NULL WHERE 1=0
+  -- TONNEL: TODO — verify via https://tonnel.network
+  UNION ALL SELECT 'TONNEL',     NULL WHERE 1=0
+  -- Portals: TODO — verify via https://portals.io
+  UNION ALL SELECT 'Portals',    NULL WHERE 1=0
 ),
 
 marketplace_addresses AS (
-  SELECT label, CONCAT('0:', contract_str) AS full_addr
+  SELECT label, contract_str AS full_addr
   FROM marketplace_map
   WHERE contract_str IS NOT NULL
 ),

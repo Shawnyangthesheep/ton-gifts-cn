@@ -17,20 +17,27 @@ WITH gift_collections AS (
 ),
 
 -- ==========================================================================
--- TODO: REPLACE with verified marketplace contract addresses on TON
--- To find addresses: visit each marketplace's "About" page or check
--- existing Dune TON dashboards for reference.
--- Example (Getgems): EQ...
+-- VERIFIED marketplace contract addresses (2026-05-13)
+-- Getgems source: https://github.com/getgems-io/nft-contracts (official repo)
+-- Others: TODO — see sql/_marketplace_addresses.md for tracking
 -- ==========================================================================
 marketplace_addresses AS (
-  SELECT 'Getgems'   AS marketplace, CAST(NULL AS VARCHAR) AS contract_address
+  -- Getgems marketplaceAddress
+  SELECT 'Getgems' AS marketplace, 'EQBYTuYbLf8INxFtD8tQeNk5ZLy-nAX9ahQbG_yl1qQ-GEMS' AS contract_address
   UNION ALL
+  -- Getgems marketplaceFeeAddress (5% royalty collector)
+  SELECT 'Getgems' AS marketplace, 'EQCjk1hh952vWaE9bRguFkAhDAL5jj3xj9p0uPWrFBq-GEMS' AS contract_address
+  UNION ALL
+  -- Fragment (Telegram) — TODO
   SELECT 'Fragment'   AS marketplace, CAST(NULL AS VARCHAR) AS contract_address
   UNION ALL
+  -- Disintar — TODO
   SELECT 'Disintar'   AS marketplace, CAST(NULL AS VARCHAR) AS contract_address
   UNION ALL
+  -- TONNEL — TODO
   SELECT 'TONNEL'     AS marketplace, CAST(NULL AS VARCHAR) AS contract_address
   UNION ALL
+  -- Portals — TODO
   SELECT 'Portals'    AS marketplace, CAST(NULL AS VARCHAR) AS contract_address
 ),
 
