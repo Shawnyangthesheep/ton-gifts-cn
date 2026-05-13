@@ -1,6 +1,8 @@
 -- ============================================================================
--- 查询 4: 持仓集中度分析（Gini 系数代理指标）
--- 中国市场定制 — 识别集中持有风险
+-- Query 4: Holder Concentration Analysis (Gini Proxy)
+-- Shows how concentrated Gift holdings are among top wallets
+-- ============================================================================
+-- Use case for Chinese traders: High concentration = easy price manipulation
 -- ============================================================================
 
 WITH gift_collections AS (
@@ -8,81 +10,90 @@ WITH gift_collections AS (
   FROM dune.rdmcd.result_gifts_collection_addresses
 ),
 
--- 每个地址持有的 Gift 数量（通过买入-卖出净额）
+-- Net holdings per wallet (buys - sells)
 wallet_holdings AS (
   SELECT
-    buys.wallet,
-    COALESCE(buys.buy_count, 0) - COALESCE(sells.sell_count, 0) AS net_holdings
+    COALESCE(b.wallet, s.wallet) AS wallet,
+    COALESCE(b.net_buys, 0) - COALESCE(s.net_sells, 0) AS net_holdings
   FROM (
-    SELECT owner_address AS wallet, COUNT(*) AS buy_count
+    SELECT owner_address AS wallet, COUNT(*) AS net_buys
     FROM ton.nft_events
     WHERE type = 'sale'
       AND collection_address IN (SELECT col_address FROM gift_collections)
     GROUP BY 1
-  ) buys
-  LEFT JOIN (
-    SELECT prev_owner AS wallet, COUNT(*) AS sell_count
+  ) b
+  FULL OUTER JOIN (
+    SELECT prev_owner AS wallet, COUNT(*) AS net_sells
     FROM ton.nft_events
     WHERE type = 'sale'
       AND collection_address IN (SELECT col_address FROM gift_collections)
     GROUP BY 1
-  ) sells ON buys.wallet = sells.wallet
-  WHERE COALESCE(buys.buy_count, 0) - COALESCE(sells.sell_count, 0) > 0
+  ) s ON b.wallet = s.wallet
+  WHERE COALESCE(b.net_buys, 0) - COALESCE(s.net_sells, 0) > 0
 ),
 
--- 排名用于计算集中度
+total_holdings AS (
+  SELECT SUM(net_holdings) AS grand_total FROM wallet_holdings
+),
+
+-- Ranked for top-N analysis
 ranked AS (
   SELECT
     net_holdings,
-    ROW_NUMBER() OVER (ORDER BY net_holdings) AS rn,
-    COUNT(*) OVER ()                          AS total_wallets
+    ROW_NUMBER() OVER (ORDER BY net_holdings DESC) AS rn,
+    COUNT(*) OVER () AS total_wallets
   FROM wallet_holdings
 )
 
 SELECT
-  'Top 10 wallets'  AS segment,
-  SUM(net_holdings) AS holdings_in_segment,
-  COUNT(*)          AS wallet_count,
-  CAST(SUM(net_holdings) AS DOUBLE) / 
-    CAST((SELECT SUM(net_holdings) FROM wallet_holdings) AS DOUBLE) * 100 
-                    AS pct_of_total
-FROM wallet_holdings
-WHERE net_holdings IN (
-  SELECT net_holdings FROM wallet_holdings ORDER BY net_holdings DESC LIMIT 10
-)
+  'Top 10' AS segment,
+  SUM(net_holdings) AS holdings,
+  COUNT(*) AS wallet_count,
+  ROUND(CAST(SUM(net_holdings) AS DOUBLE) / NULLIF((SELECT grand_total FROM total_holdings), 0) * 100, 2) AS pct_of_total
+FROM (
+  SELECT net_holdings FROM ranked WHERE rn <= 10
+) t
 
 UNION ALL
 
 SELECT
-  'Top 50 wallets',
+  'Top 50',
   SUM(net_holdings),
   COUNT(*),
-  CAST(SUM(net_holdings) AS DOUBLE) / 
-    CAST((SELECT SUM(net_holdings) FROM wallet_holdings) AS DOUBLE) * 100
-FROM wallet_holdings
-WHERE net_holdings IN (
-  SELECT net_holdings FROM wallet_holdings ORDER BY net_holdings DESC LIMIT 50
-)
+  ROUND(CAST(SUM(net_holdings) AS DOUBLE) / NULLIF((SELECT grand_total FROM total_holdings), 0) * 100, 2)
+FROM (
+  SELECT net_holdings FROM ranked WHERE rn <= 50
+) t
 
 UNION ALL
 
 SELECT
-  'Top 100 wallets',
+  'Top 100',
   SUM(net_holdings),
   COUNT(*),
-  CAST(SUM(net_holdings) AS DOUBLE) / 
-    CAST((SELECT SUM(net_holdings) FROM wallet_holdings) AS DOUBLE) * 100
-FROM wallet_holdings
-WHERE net_holdings IN (
-  SELECT net_holdings FROM wallet_holdings ORDER BY net_holdings DESC LIMIT 100
-)
+  ROUND(CAST(SUM(net_holdings) AS DOUBLE) / NULLIF((SELECT grand_total FROM total_holdings), 0) * 100, 2)
+FROM (
+  SELECT net_holdings FROM ranked WHERE rn <= 100
+) t
 
 UNION ALL
 
 SELECT
-  'All wallets',
+  'All Wallets',
   SUM(net_holdings),
   COUNT(*),
   100.0
 FROM wallet_holdings
-ORDER BY wallet_count
+
+-- ============================================================================
+-- Dune Visualization Hint:
+--   Chart type : Stacked Bar (horizontal or vertical)
+--   X-axis     : segment (Top 10 → All Wallets)
+--   Y-axis     : pct_of_total (0-100%)
+--   Color      : Segment (Top 10 = red warning, Top 50 = orange, etc.)
+--
+-- Story this tells:
+--   - If Top 10 hold > 50% → High manipulation risk (集中持仓风险高)
+--   - If Top 100 hold < 20% → Healthy distribution (持仓分散，健康市场)
+-- Chinese traders should avoid markets where a few whales control supply.
+-- ============================================================================

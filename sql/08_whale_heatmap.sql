@@ -1,6 +1,8 @@
 -- ============================================================================
--- 查询 8: 鲸鱼活动热力图 — 按小时/星期/市场分布
--- 帮助中国交易者识别最佳交易时间段
+-- Query 8: Whale Activity Heatmap — By Hour × Day of Week
+-- Helps Chinese traders identify the best/worst trading windows
+-- ============================================================================
+-- Key feature: Converts UTC to Beijing time (UTC+8) for Chinese users
 -- ============================================================================
 
 WITH gift_collections AS (
@@ -8,7 +10,7 @@ WITH gift_collections AS (
   FROM dune.rdmcd.result_gifts_collection_addresses
 ),
 
--- 鲸鱼地址（近90天交易>=100次）
+-- Define whales: 100+ trades in last 90 days
 whales AS (
   SELECT owner_address AS wallet
   FROM ton.nft_events
@@ -19,11 +21,11 @@ whales AS (
   HAVING COUNT(*) >= 100
 ),
 
--- 鲸鱼的按小时分布
+-- Hourly × daily distribution of whale trades
 whale_activity AS (
   SELECT
-    EXTRACT(HOUR FROM e.block_date)     AS trade_hour,
-    EXTRACT(DOW FROM e.block_date)      AS trade_dow,  -- 0=Sun, 6=Sat
+    EXTRACT(HOUR FROM e.block_date)     AS utc_hour,
+    EXTRACT(DOW FROM e.block_date)      AS dow,  -- 0=Sun, 6=Sat
     COUNT(*)                             AS whale_trades
   FROM ton.nft_events e
   WHERE e.type = 'sale'
@@ -34,18 +36,43 @@ whale_activity AS (
 )
 
 SELECT
-  trade_dow,
-  CASE trade_dow
+  dow                                          AS day_of_week_num,
+  CASE dow
     WHEN 0 THEN '周日' WHEN 1 THEN '周一' WHEN 2 THEN '周二'
     WHEN 3 THEN '周三' WHEN 4 THEN '周四' WHEN 5 THEN '周五'
     WHEN 6 THEN '周六'
-  END                                     AS day_name_cn,
-  trade_hour,
-  -- UTC+8 北京时间转换
-  (trade_hour + 8) % 24                   AS beijing_hour,
+  END                                          AS day_name_cn,
+  (utc_hour + 8) % 24                          AS beijing_hour,
   whale_trades,
-  -- 该时段占本日总交易的%
-  CAST(whale_trades AS DOUBLE) / 
-    SUM(whale_trades) OVER (PARTITION BY trade_dow) * 100 AS pct_of_day
+  ROUND(
+    CAST(whale_trades AS DOUBLE) / 
+    SUM(whale_trades) OVER (PARTITION BY dow) * 100, 2
+  )                                            AS pct_of_day,
+
+  -- Peak/valley indicator
+  CASE
+    WHEN CAST(whale_trades AS DOUBLE) >= 
+      AVG(whale_trades) OVER (PARTITION BY dow) * 1.5
+    THEN '🔴 鲸鱼高峰'
+    WHEN CAST(whale_trades AS DOUBLE) <= 
+      AVG(whale_trades) OVER (PARTITION BY dow) * 0.5
+    THEN '🟢 低流动性窗口'
+    ELSE '🟡 正常'
+  END                                          AS activity_level
+
 FROM whale_activity
-ORDER BY trade_dow, trade_hour
+ORDER BY dow, beijing_hour
+
+-- ============================================================================
+-- Dune Visualization Hint:
+--   Chart type : Heatmap (pivot table → color by whale_trades)
+--   X-axis     : beijing_hour (0–23)
+--   Y-axis     : day_name_cn (周一–周日)
+--   Color      : whale_trades (darker = more whale activity)
+--
+-- Story this tells:
+--   - When do Chinese whales trade? (heatmap peaks in Beijing time)
+--   - When is liquidity low? (useful for small traders to avoid slippage)
+--   - Weekend vs weekday patterns? (dow dimension)
+-- For Chinese traders: 避开鲸鱼高峰 = 减少滑点; 低流动性窗口 = 大单可能剧烈波动
+-- ============================================================================
